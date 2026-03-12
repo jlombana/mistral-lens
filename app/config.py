@@ -25,15 +25,16 @@ class Settings(BaseSettings):
     MISTRAL_API_KEY: str
 
     # Model configuration
-    VISION_MODEL: str = "mistral-small-latest"
+    OCR_MODEL: str = "mistral-ocr-latest"
+    CHAT_MODEL: str = "mistral-large-latest"
 
     # Paths
     DATASET_PATH: str = "data/"
     RESULTS_PATH: str = "results/"
 
-    # Server (FastAPI mode)
+    # Gradio server
     HOST: str = "0.0.0.0"
-    PORT: int = 8000
+    PORT: int = 7860
 
     @property
     def dataset_dir(self) -> Path:

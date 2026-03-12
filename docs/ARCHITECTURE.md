@@ -2,30 +2,33 @@
 
 ## Overview
 
-Mistral-Lens is a pipeline-based evaluation tool with four main stages:
+Mistral-Lens is a document intelligence pipeline with three extraction steps and four evaluation metrics:
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                      MISTRAL-LENS                           │
-│                                                             │
-│  ┌──────────┐    ┌───────────┐    ┌─────────┐   ┌───────┐ │
-│  │ Dataset  │───▶│ Extractor │───▶│ Metrics │──▶│Results│ │
-│  │ Loader   │    │           │    │ Engine  │   │ Store │ │
-│  └──────────┘    └─────┬─────┘    └─────────┘   └───────┘ │
-│                        │                                    │
-│                        ▼                                    │
-│                 ┌──────────────┐                           │
-│                 │ Mistral API  │                           │
-│                 │ (via retry)  │                           │
-│                 └──────────────┘                           │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                       MISTRAL-LENS                              │
+│                                                                 │
+│  ┌──────────┐   ┌──────────┐   ┌─────────┐   ┌─────────────┐  │
+│  │   OCR    │──▶│  Topic   │──▶│   Q&A   │──▶│   Metrics   │  │
+│  │ (Step 1) │   │ (Step 2) │   │(Step 3) │   │   Engine    │  │
+│  └────┬─────┘   └────┬─────┘   └────┬────┘   └──────┬──────┘  │
+│       │              │              │                │          │
+│       ▼              ▼              ▼                ▼          │
+│  mistral-ocr    mistral-large  mistral-large    WER, ROUGE-L   │
+│   /v1/ocr       /v1/chat       /v1/chat        LLM-as-judge   │
+│                                                                 │
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │              Gradio UI (localhost:7860)                   │  │
+│  │  Tab 1: Upload & Extract  │  Tab 2: Evaluate  │  Tab 3  │  │
+│  └──────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ## Components
 
 ### 1. Config (`app/config.py`)
 - Loads settings from `.env` via pydantic-settings
-- Single `Settings` instance shared across modules
+- Models: OCR_MODEL (mistral-ocr-latest), CHAT_MODEL (mistral-large-latest)
 - Validates required keys at startup
 
 ### 2. Retry Wrapper (`app/retry.py`)
@@ -33,38 +36,41 @@ Mistral-Lens is a pipeline-based evaluation tool with four main stages:
 - Max 10 retries, handles 429/5xx errors
 - Used by all external API calls
 
-### 3. Extractor (`app/extractor.py`)
-- Sends images to Mistral Vision API
-- Returns structured JSON: `{category, colour, material, style, ...}`
-- Attaches metadata: timestamp, model version, image ID
+### 3. Prompts (`app/prompts.py`)
+- Topic extraction prompt template
+- Q&A extraction prompt template
+- LLM-as-judge rubrics (topic and answer, 1-5 scale)
 
-### 4. Metrics Engine (`app/metrics.py`)
-- Compares extractions vs ground truth
-- Computes: per-field accuracy, precision, recall, F1
-- Independent of extractor (takes generic dicts)
+### 4. Extractor (`app/extractor.py`)
+- Step 1: PDF → raw text via mistral-ocr-latest
+- Step 2: Raw text → topic summary via mistral-large-latest
+- Step 3: Raw text + question → answer via mistral-large-latest
 
-### 5. Entry Point (`app/main.py` + `scripts/run_evaluation.py`)
-- Orchestrates the pipeline
-- Outputs results via rich console tables
-- Saves JSON/CSV reports to `results/`
+### 5. Metrics Engine (`app/metrics.py`)
+- WER via jiwer (automated, target < 0.15)
+- ROUGE-L via rouge-score (automated, target > 0.80)
+- LLM-as-judge via mistral-large-latest (model-scored, target > 4.0/5)
+- Independent of extractor module
 
-## Data Flow
-
-1. **Input:** Directory of images + CSV/JSON ground truth labels
-2. **Extraction:** Each image → Mistral Vision API → structured JSON
-3. **Comparison:** Extracted fields vs ground truth fields
-4. **Output:** Metrics report (JSON) + console summary
+### 6. Entry Point (`app/main.py`)
+- Gradio UI with 3 tabs: Upload & Extract, Evaluate, Business Case
+- Runs at http://localhost:7860
 
 ## Dependencies Between Modules
 
 ```
 config.py ◄── retry.py ◄── extractor.py
                               │
-config.py ◄── metrics.py     │  (NO dependency between
-                              │   extractor and metrics)
-main.py ──▶ extractor.py
-        ──▶ metrics.py
+config.py ◄── prompts.py ◄── extractor.py
+                          ◄── metrics.py
+                              │
+main.py ──▶ extractor.py     │  (NO dependency between
+        ──▶ metrics.py       │   extractor and metrics)
         ──▶ config.py
 ```
 
-**Key constraint:** `extractor.py` and `metrics.py` must NOT import each other.
+## Dataset
+
+- Source: `datasets.load_dataset('ServiceNow/repliqa')`
+- Splits: repliqa_0 – repliqa_2 (dev), repliqa_3 (holdout)
+- Fields: document (PDF), question, answer, topic

@@ -1,71 +1,74 @@
 """Shared test fixtures for Mistral-Lens."""
 
+from __future__ import annotations
+
 import pytest
 
 
 @pytest.fixture
+def sample_extraction() -> dict:
+    """Sample extraction result for testing."""
+    return {
+        "document_id": "doc_001",
+        "timestamp": "2026-03-12T00:00:00+00:00",
+        "ocr_model": "mistral-ocr-latest",
+        "chat_model": "mistral-large-latest",
+        "extracted_text": "The quick brown fox jumps over the lazy dog.",
+        "topic": "A fox jumping over a dog in a field.",
+        "answer": "The fox jumped over the dog because it was in its path.",
+        "question": "Why did the fox jump over the dog?",
+    }
+
+
+@pytest.fixture
+def sample_ground_truth() -> dict:
+    """Sample ground truth for testing."""
+    return {
+        "document_id": "doc_001",
+        "text": "The quick brown fox jumps over the lazy dog.",
+        "topic": "An animal encounter involving a fox and a dog.",
+        "answer": "The fox jumped over the dog to continue on its way.",
+        "question": "Why did the fox jump over the dog?",
+    }
+
+
+@pytest.fixture
 def sample_extractions() -> list[dict]:
-    """Sample extraction results for testing."""
+    """Batch of sample extraction results."""
     return [
         {
-            "image_id": "img_001",
-            "timestamp": "2026-03-12T00:00:00+00:00",
-            "model_version": "mistral-small-latest",
-            "category": "dress",
-            "colour": "red",
-            "material": "cotton",
-            "style": "casual",
+            "document_id": "doc_001",
+            "extracted_text": "The quick brown fox jumps over the lazy dog.",
+            "topic": "A fox jumping over a dog.",
+            "answer": "The fox jumped over the dog.",
+            "question": "Why did the fox jump?",
         },
         {
-            "image_id": "img_002",
-            "timestamp": "2026-03-12T00:00:01+00:00",
-            "model_version": "mistral-small-latest",
-            "category": "jacket",
-            "colour": "black",
-            "material": "leather",
-            "style": "formal",
-        },
-        {
-            "image_id": "img_003",
-            "timestamp": "2026-03-12T00:00:02+00:00",
-            "model_version": "mistral-small-latest",
-            "category": "sneakers",
-            "colour": "white",
-            "material": "synthetic",
-            "style": "sporty",
+            "document_id": "doc_002",
+            "extracted_text": "Climate change is affecting global weather patterns.",
+            "topic": "Climate change and weather.",
+            "answer": "Rising temperatures cause extreme weather events.",
+            "question": "How does climate change affect weather?",
         },
     ]
 
 
 @pytest.fixture
-def sample_ground_truth() -> list[dict]:
-    """Sample ground truth labels for testing."""
+def sample_ground_truths() -> list[dict]:
+    """Batch of sample ground truth data."""
     return [
         {
-            "image_id": "img_001",
-            "category": "dress",
-            "colour": "red",
-            "material": "cotton",
-            "style": "casual",
+            "document_id": "doc_001",
+            "text": "The quick brown fox jumps over the lazy dog.",
+            "topic": "An animal encounter involving a fox and a dog.",
+            "answer": "The fox jumped over the dog to continue on its way.",
+            "question": "Why did the fox jump?",
         },
         {
-            "image_id": "img_002",
-            "category": "jacket",
-            "colour": "navy blue",  # Mismatch: "black" vs "navy blue"
-            "material": "leather",
-            "style": "formal",
-        },
-        {
-            "image_id": "img_003",
-            "category": "trainers",  # Mismatch: "sneakers" vs "trainers"
-            "colour": "white",
-            "material": "mesh",     # Mismatch: "synthetic" vs "mesh"
-            "style": "sporty",
+            "document_id": "doc_002",
+            "text": "Climate change is affecting global weather patterns significantly.",
+            "topic": "Impact of climate change on global weather systems.",
+            "answer": "Climate change leads to more frequent extreme weather events.",
+            "question": "How does climate change affect weather?",
         },
     ]
-
-
-@pytest.fixture
-def default_fields() -> list[str]:
-    """Default fields used for evaluation."""
-    return ["category", "colour", "material", "style"]

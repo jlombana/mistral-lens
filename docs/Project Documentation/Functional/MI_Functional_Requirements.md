@@ -4,7 +4,7 @@ Functional Requirements
 
 MI_Functional_Requirements · v1.0 · March 2026
 
-## Version History
+**Version History**
 
   ------------- ------------- ------------------ -------------------------------
    **Version**    **Date**        **Author**               **Changes**
@@ -12,7 +12,7 @@ MI_Functional_Requirements · v1.0 · March 2026
        1.0       12 Mar 2026    Javier Lombana           Initial release
   ------------- ------------- ------------------ -------------------------------
 
-## Document Metadata
+**Document Metadata**
 
   ---------------------- ------------------------------------------------
         **Field**                           **Value**
@@ -32,7 +32,7 @@ MI_Functional_Requirements · v1.0 · March 2026
           Vendor                     Mistral AI (models only)
   ---------------------- ------------------------------------------------
 
-# 1. Project Overview
+**1. Project Overview**
 
 mistral-lens is a document intelligence demo application built
 exclusively on Mistral AI models. It extracts structured information
@@ -45,7 +45,7 @@ existing cloud-native document processing solutions on both cost and
 accuracy dimensions, serving as a live proof-of-concept for partner
 sales conversations.
 
-## 1.1 Objectives
+**1.1 Objectives**
 
 - Extract text, topic, and Q&A from PDF documents using Mistral models
 
@@ -58,7 +58,7 @@ sales conversations.
 - Run end-to-end on the repliqa_3 holdout set live during the evaluation
   panel
 
-## 1.2 Scope
+**1.2 Scope**
 
 +-----------------------------------------------------------------------+
 | **In scope**                                                          |
@@ -88,9 +88,9 @@ sales conversations.
 | Document types other than PDF                                         |
 +-----------------------------------------------------------------------+
 
-# 2. Technical Stack
+**2. Technical Stack**
 
-## 2.1 Models
+**2.1 Models**
 
   ---------------------- -------------------------- ----------------------
         **Model**               **Use Case**             **Endpoint**
@@ -104,7 +104,7 @@ sales conversations.
                                                      /v1/chat/completions
   ---------------------- -------------------------- ----------------------
 
-## 2.2 Backend
+**2.2 Backend**
 
 - Python 3.11+
 
@@ -120,7 +120,7 @@ sales conversations.
 
 - python-dotenv --- API key management
 
-## 2.3 Frontend
+**2.3 Frontend**
 
 - Gradio (pip install gradio) --- UI framework
 
@@ -128,7 +128,7 @@ sales conversations.
 
 - Three tabs: Upload, Evaluate, Business Case
 
-## 2.4 Dataset
+**2.4 Dataset**
 
   -------------------------- -------------------------- -----------------
           **Split**                   **Use**              **Records**
@@ -139,9 +139,9 @@ sales conversations.
           repliqa_3          Holdout / live evaluation        \~700
   -------------------------- -------------------------- -----------------
 
-# 3. Functional Requirements
+**3. Functional Requirements**
 
-## 3.1 Extraction pipeline
+**3.1 Extraction pipeline**
 
 Each document goes through a three-step extraction pipeline:
 
@@ -157,7 +157,7 @@ Each document goes through a three-step extraction pipeline:
                     question       (2--5 sentences)    
   ------------- ---------------- --------------------- ----------------------
 
-## 3.2 Evaluation metrics
+**3.2 Evaluation metrics**
 
   --------------------- ---------------- -------------- -------------------
        **Metric**        **Applies to**     **Type**        **Threshold
@@ -179,9 +179,9 @@ structured rubric. The rubric criteria, rationale, and score are
 returned as JSON. This approach mirrors industry-standard RAGAS-style
 evaluation.
 
-# 4. Environment Setup
+**4. Environment Setup**
 
-## 4.1 Prerequisites
+**4.1 Prerequisites**
 
   ------------------- ------------- -------------------------------------
     **Dependency**     **Version**           **Install command**
@@ -200,7 +200,7 @@ evaluation.
     Mistral API key        ---         platform.mistral.ai → API Keys
   ------------------- ------------- -------------------------------------
 
-## 4.2 Installation
+**4.2 Installation**
 
 Clone and set up the project:
 
@@ -216,7 +216,7 @@ Create .env file at project root:
 
 > MISTRAL_API_KEY=your_key_here
 
-## 4.3 requirements.txt
+**4.3 requirements.txt**
 
 > mistralai\>=1.0.0
 >
@@ -236,13 +236,13 @@ Create .env file at project root:
 >
 > Pillow\>=10.0.0
 
-## 4.4 Run
+**4.4 Run**
 
 > python app/main.py
 
 Opens at http://localhost:7860
 
-# 5. Project Structure
+**5. Project Structure**
 
 > mistral-lens/
 >
@@ -280,7 +280,7 @@ Opens at http://localhost:7860
 >
 > README.md
 
-# 6. Document Nomenclature
+**6. Document Nomenclature**
 
 All project documents follow the prefix ML- (mistral-lens) with a type
 code and sequential number:

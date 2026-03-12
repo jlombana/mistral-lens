@@ -1,137 +1,195 @@
-"""Extractor module — sends images to Mistral Vision API for structured metadata extraction.
+"""Extractor module — 3-step pipeline: OCR → Topic → Q&A using Mistral models.
 
-This module handles all interaction with the Mistral Vision API.
-Each extraction includes timestamp and model version metadata.
+Step 1: PDF → raw text via mistral-ocr-latest (/v1/ocr)
+Step 2: Raw text → topic summary via mistral-large-latest
+Step 3: Raw text + question → long-form answer via mistral-large-latest
 """
 
 from __future__ import annotations
 
-import json
 import logging
 from pathlib import Path
 
 from pydantic import BaseModel
 
 from app.config import get_settings
+from app.prompts import QA_EXTRACTION_PROMPT, TOPIC_EXTRACTION_PROMPT
 from app.retry import retry
-from app.utils import get_image_mime_type, image_to_base64, timestamp_now
+from app.utils import pdf_to_base64, timestamp_now
 
 logger = logging.getLogger(__name__)
 
 
 class ExtractionResult(BaseModel):
-    """Structured metadata extracted from an image."""
+    """Result of the full extraction pipeline for a single document."""
 
-    image_id: str
+    document_id: str
     timestamp: str
-    model_version: str
-    category: str | None = None
-    colour: str | None = None
-    material: str | None = None
-    style: str | None = None
-    raw_response: dict = {}
-
-
-EXTRACTION_PROMPT = """Analyze this product image and extract the following metadata as JSON:
-{
-  "category": "product category (e.g., dress, jacket, sneakers, bag)",
-  "colour": "primary colour (e.g., red, navy blue, black)",
-  "material": "primary material (e.g., cotton, leather, polyester)",
-  "style": "style descriptor (e.g., casual, formal, sporty)"
-}
-
-Return ONLY the JSON object, no additional text."""
+    ocr_model: str
+    chat_model: str
+    extracted_text: str
+    topic: str
+    answer: str | None = None
+    question: str | None = None
 
 
 @retry(max_retries=10, base_delay=2.0, max_delay=60.0)
-def _call_mistral_vision(image_path: Path, model: str, api_key: str) -> dict:
-    """Call Mistral Vision API with an image and return the response.
+def _call_ocr(pdf_base64: str, model: str, api_key: str) -> str:
+    """Call Mistral OCR API to extract text from a PDF.
 
     Args:
-        image_path: Path to the image file.
-        model: Mistral model identifier.
+        pdf_base64: Base64-encoded PDF content.
+        model: OCR model identifier.
         api_key: Mistral API key.
 
     Returns:
-        Parsed JSON response from the model.
+        Extracted text string.
     """
     from mistralai import Mistral
 
     client = Mistral(api_key=api_key)
-    base64_image = image_to_base64(image_path)
-    mime_type = get_image_mime_type(image_path)
-
-    response = client.chat.complete(
+    response = client.ocr.process(
         model=model,
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image_url",
-                        "image_url": f"data:{mime_type};base64,{base64_image}",
-                    },
-                    {
-                        "type": "text",
-                        "text": EXTRACTION_PROMPT,
-                    },
-                ],
-            }
-        ],
+        document={
+            "type": "document_url",
+            "document_url": f"data:application/pdf;base64,{pdf_base64}",
+        },
     )
 
-    raw_text = response.choices[0].message.content
-    # Parse JSON from response (handle markdown code blocks)
-    if "```json" in raw_text:
-        raw_text = raw_text.split("```json")[1].split("```")[0]
-    elif "```" in raw_text:
-        raw_text = raw_text.split("```")[1].split("```")[0]
-
-    return json.loads(raw_text.strip())
+    pages_text = []
+    for page in response.pages:
+        pages_text.append(page.markdown)
+    return "\n\n".join(pages_text)
 
 
-def extract_metadata(image_path: Path) -> ExtractionResult:
-    """Extract structured metadata from a single image.
+@retry(max_retries=10, base_delay=2.0, max_delay=60.0)
+def _call_chat(prompt: str, model: str, api_key: str) -> str:
+    """Call Mistral chat API with a prompt.
 
     Args:
-        image_path: Path to the image file.
+        prompt: The prompt text.
+        model: Chat model identifier.
+        api_key: Mistral API key.
 
     Returns:
-        ExtractionResult with extracted fields and metadata.
+        Model response text.
     """
-    settings = get_settings()
+    from mistralai import Mistral
 
-    logger.info("Extracting metadata from %s", image_path.name)
-    parsed = _call_mistral_vision(
-        image_path=image_path,
-        model=settings.VISION_MODEL,
-        api_key=settings.MISTRAL_API_KEY,
+    client = Mistral(api_key=api_key)
+    response = client.chat.complete(
+        model=model,
+        messages=[{"role": "user", "content": prompt}],
     )
-
-    return ExtractionResult(
-        image_id=image_path.stem,
-        timestamp=timestamp_now(),
-        model_version=settings.VISION_MODEL,
-        category=parsed.get("category"),
-        colour=parsed.get("colour"),
-        material=parsed.get("material"),
-        style=parsed.get("style"),
-        raw_response=parsed,
-    )
+    return response.choices[0].message.content
 
 
-def extract_batch(image_paths: list[Path]) -> list[ExtractionResult]:
-    """Extract metadata from multiple images sequentially.
+def extract_text(pdf_path: Path) -> str:
+    """Extract text from a PDF using Mistral OCR.
 
     Args:
-        image_paths: List of image file paths.
+        pdf_path: Path to the PDF file.
+
+    Returns:
+        Extracted text string.
+    """
+    settings = get_settings()
+    pdf_base64 = pdf_to_base64(pdf_path)
+    logger.info("OCR extracting text from %s", pdf_path.name)
+    return _call_ocr(pdf_base64, settings.OCR_MODEL, settings.MISTRAL_API_KEY)
+
+
+def extract_topic(text: str) -> str:
+    """Extract topic summary from document text.
+
+    Args:
+        text: Raw text extracted from the document.
+
+    Returns:
+        Topic summary string (1-3 sentences).
+    """
+    settings = get_settings()
+    prompt = TOPIC_EXTRACTION_PROMPT.format(text=text)
+    logger.info("Extracting topic summary")
+    return _call_chat(prompt, settings.CHAT_MODEL, settings.MISTRAL_API_KEY)
+
+
+def extract_answer(text: str, question: str) -> str:
+    """Extract answer to a question from document text.
+
+    Args:
+        text: Raw text extracted from the document.
+        question: Question to answer.
+
+    Returns:
+        Answer string (2-5 sentences).
+    """
+    settings = get_settings()
+    prompt = QA_EXTRACTION_PROMPT.format(text=text, question=question)
+    logger.info("Extracting answer for question: %s", question[:50])
+    return _call_chat(prompt, settings.CHAT_MODEL, settings.MISTRAL_API_KEY)
+
+
+def extract_document(
+    pdf_path: Path,
+    question: str | None = None,
+    document_id: str | None = None,
+) -> ExtractionResult:
+    """Run the full 3-step extraction pipeline on a single document.
+
+    Args:
+        pdf_path: Path to the PDF file.
+        question: Optional question for Q&A extraction.
+        document_id: Optional document identifier (defaults to filename).
+
+    Returns:
+        ExtractionResult with all extracted fields.
+    """
+    settings = get_settings()
+    doc_id = document_id or pdf_path.stem
+
+    logger.info("Processing document: %s", doc_id)
+
+    # Step 1: OCR
+    extracted_text = extract_text(pdf_path)
+
+    # Step 2: Topic
+    topic = extract_topic(extracted_text)
+
+    # Step 3: Q&A (optional)
+    answer = None
+    if question:
+        answer = extract_answer(extracted_text, question)
+
+    return ExtractionResult(
+        document_id=doc_id,
+        timestamp=timestamp_now(),
+        ocr_model=settings.OCR_MODEL,
+        chat_model=settings.CHAT_MODEL,
+        extracted_text=extracted_text,
+        topic=topic,
+        answer=answer,
+        question=question,
+    )
+
+
+def extract_batch(
+    pdf_paths: list[Path],
+    questions: list[str] | None = None,
+) -> list[ExtractionResult]:
+    """Run extraction pipeline on multiple documents.
+
+    Args:
+        pdf_paths: List of PDF file paths.
+        questions: Optional list of questions (one per document).
 
     Returns:
         List of ExtractionResult objects.
     """
     results = []
-    for i, path in enumerate(image_paths, 1):
-        logger.info("Processing image %d/%d: %s", i, len(image_paths), path.name)
-        result = extract_metadata(path)
+    for i, path in enumerate(pdf_paths):
+        question = questions[i] if questions and i < len(questions) else None
+        logger.info("Processing document %d/%d: %s", i + 1, len(pdf_paths), path.name)
+        result = extract_document(path, question=question)
         results.append(result)
     return results

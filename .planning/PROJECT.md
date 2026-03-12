@@ -2,17 +2,18 @@
 
 ## What
 
-Mistral-Lens is a VLM (Visual Language Model) evaluation and benchmarking tool that:
-1. Extracts structured metadata from product images using Mistral's vision API
-2. Compares extraction quality against ground truth labels
-3. Computes accuracy metrics (precision, recall, per-field accuracy)
-4. Generates a business case for VLM adoption vs alternatives (GPT-4o-mini, manual labeling)
+Mistral-Lens is a document intelligence demo application built exclusively on Mistral AI models that:
+1. Extracts structured information from PDF documents (text, topic, Q&A) using Mistral OCR and Large models
+2. Evaluates extraction quality against ground truth from the repliqa dataset
+3. Computes metrics: WER, ROUGE-L (automated) + LLM-as-judge scoring (model-scored)
+4. Presents a business case comparing Mistral vs incumbent ($0.75/page, 85% accuracy)
+5. Provides a Gradio UI for interactive demo and evaluation
 
 ## Why
 
-- Validate Mistral Vision as a cost-effective alternative to GPT-4o-mini for structured image metadata extraction
-- Provide quantitative evidence (accuracy, cost, speed) for business decision-making
-- Explore fine-tuning and local inference as a path to zero-API-cost extraction
+- Demonstrate Mistral can outperform incumbent document processing solutions on cost and accuracy
+- Serve as a live proof-of-concept for partner sales conversations
+- Run end-to-end on repliqa_3 holdout set during evaluation panel
 
 ## Stakeholders
 
@@ -25,20 +26,26 @@ Mistral-Lens is a VLM (Visual Language Model) evaluation and benchmarking tool t
 ## Scope
 
 ### In scope
-- Image metadata extraction via Mistral Vision API
-- Accuracy benchmarking against ground truth
-- Cost and speed comparison vs GPT-4o-mini
-- Business case generation
-- Fine-tuning pipeline (Phase 3)
+- PDF document processing via Mistral OCR API
+- Topic extraction and long-form Q&A generation
+- Automated metrics: WER, ROUGE-L
+- Model-judged metrics: LLM-as-judge scoring
+- Business case with cost comparison and explicit assumptions
+- 5-minute demo video
+- Gradio UI (Upload, Evaluate, Business Case tabs)
 
 ### Out of scope
-- Production deployment / user-facing UI
-- Real-time extraction service (evaluation tool only)
-- Support for non-image modalities
+- Non-Mistral models or hybrid model approaches
+- Production deployment infrastructure
+- Authentication / multi-user support
+- Document types other than PDF
 
 ## Success Metrics
 
-1. Extractor achieves ≥80% accuracy on structured fields vs ground truth
-2. Cost per extraction is ≤50% of GPT-4o-mini equivalent
-3. Full evaluation pipeline runs end-to-end without manual intervention
-4. All code has type hints, docstrings, and tests
+| Metric | Target |
+|--------|--------|
+| WER (text extraction) | < 0.15 |
+| ROUGE-L (text extraction) | > 0.80 |
+| Topic accuracy (LLM judge) | > 4.0 / 5 |
+| Answer quality (LLM judge) | > 4.0 / 5 |
+| Cost per page | < $0.75 (incumbent) |

@@ -4,6 +4,8 @@ Run with: pytest tests/test_integration.py -m integration
 Requires MISTRAL_API_KEY to be set.
 """
 
+from __future__ import annotations
+
 import pytest
 
 pytestmark = pytest.mark.integration
@@ -13,6 +15,6 @@ pytestmark = pytest.mark.integration
 def test_full_pipeline():
     """Run the full evaluation pipeline end-to-end.
 
-    TODO: Implement once dataset is available.
+    TODO: Implement once dataset is explored (ML-T004) and pipeline is wired (ML-T007).
     """
     pass

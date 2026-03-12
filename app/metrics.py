@@ -1,139 +1,265 @@
-"""Metrics engine — compares extractions against ground truth and computes accuracy.
+"""Metrics engine — WER, ROUGE-L, and LLM-as-judge scoring.
 
 This module is independent of the extractor module.
-It accepts generic dictionaries and computes field-level accuracy metrics.
+It accepts text pairs and computes evaluation metrics.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
 from pydantic import BaseModel
 
+from app.config import get_settings
+from app.prompts import LLM_JUDGE_ANSWER_PROMPT, LLM_JUDGE_TOPIC_PROMPT
+from app.retry import retry
 from app.utils import timestamp_now
 
 logger = logging.getLogger(__name__)
 
 
-class FieldMetrics(BaseModel):
-    """Accuracy metrics for a single field."""
+class TextMetrics(BaseModel):
+    """Automated text metrics for a single document."""
 
-    field: str
-    accuracy: float
-    total: int
-    correct: int
+    document_id: str
+    wer: float
+    rouge_l: float
+
+
+class JudgeScore(BaseModel):
+    """LLM-as-judge score for a single evaluation."""
+
+    document_id: str
+    metric_type: str  # "topic" or "answer"
+    score: int  # 1-5
+    rationale: str
 
 
 class MetricsReport(BaseModel):
     """Complete metrics report for an evaluation run."""
 
     timestamp: str
-    model_version: str
-    total_images: int
-    fields: list[FieldMetrics]
-    overall_accuracy: float
+    ocr_model: str
+    chat_model: str
+    total_documents: int
+    avg_wer: float
+    avg_rouge_l: float
+    avg_topic_score: float
+    avg_answer_score: float
+    text_metrics: list[TextMetrics]
+    judge_scores: list[JudgeScore]
 
 
-def _normalize_value(value: Any) -> str | None:
-    """Normalize a value for comparison (lowercase, strip whitespace).
-
-    Args:
-        value: Raw value from extraction or ground truth.
-
-    Returns:
-        Normalized string or None if value is empty.
-    """
-    if value is None:
-        return None
-    normalized = str(value).strip().lower()
-    return normalized if normalized else None
-
-
-def compute_field_accuracy(
-    extractions: list[dict],
-    ground_truth: list[dict],
-    field: str,
-) -> FieldMetrics:
-    """Compute accuracy for a single field across all samples.
+def compute_wer(reference: str, hypothesis: str) -> float:
+    """Compute Word Error Rate between reference and hypothesis text.
 
     Args:
-        extractions: List of extraction dicts (must have 'image_id' key).
-        ground_truth: List of ground truth dicts (must have 'image_id' key).
-        field: Field name to evaluate.
+        reference: Ground truth text.
+        hypothesis: Extracted/predicted text.
 
     Returns:
-        FieldMetrics with accuracy stats for this field.
+        WER score (lower is better, 0.0 = perfect).
     """
-    gt_by_id = {item["image_id"]: item for item in ground_truth}
-    total = 0
-    correct = 0
+    from jiwer import wer
+    if not reference or not hypothesis:
+        return 1.0
+    return wer(reference, hypothesis)
 
-    for extraction in extractions:
-        image_id = extraction.get("image_id")
-        gt_item = gt_by_id.get(image_id)
-        if gt_item is None:
-            continue
 
-        extracted_val = _normalize_value(extraction.get(field))
-        gt_val = _normalize_value(gt_item.get(field))
+def compute_rouge_l(reference: str, hypothesis: str) -> float:
+    """Compute ROUGE-L F-measure between reference and hypothesis text.
 
-        if gt_val is None:
-            continue  # Skip if no ground truth for this field
+    Args:
+        reference: Ground truth text.
+        hypothesis: Extracted/predicted text.
 
-        total += 1
-        if extracted_val == gt_val:
-            correct += 1
+    Returns:
+        ROUGE-L F-measure (higher is better, 1.0 = perfect).
+    """
+    from rouge_score.rouge_scorer import RougeScorer
+    if not reference or not hypothesis:
+        return 0.0
+    scorer = RougeScorer(["rougeL"], use_stemmer=True)
+    scores = scorer.score(reference, hypothesis)
+    return scores["rougeL"].fmeasure
 
-    accuracy = correct / total if total > 0 else 0.0
 
-    return FieldMetrics(
-        field=field,
-        accuracy=accuracy,
-        total=total,
-        correct=correct,
+def compute_text_metrics(
+    document_id: str,
+    reference: str,
+    hypothesis: str,
+) -> TextMetrics:
+    """Compute automated text metrics for a single document.
+
+    Args:
+        document_id: Document identifier.
+        reference: Ground truth text.
+        hypothesis: Extracted text.
+
+    Returns:
+        TextMetrics with WER and ROUGE-L scores.
+    """
+    return TextMetrics(
+        document_id=document_id,
+        wer=compute_wer(reference, hypothesis),
+        rouge_l=compute_rouge_l(reference, hypothesis),
+    )
+
+
+@retry(max_retries=10, base_delay=2.0, max_delay=60.0)
+def _call_judge(prompt: str, model: str, api_key: str) -> dict:
+    """Call Mistral chat API for LLM-as-judge scoring.
+
+    Args:
+        prompt: Judge prompt with reference and prediction.
+        model: Chat model identifier.
+        api_key: Mistral API key.
+
+    Returns:
+        Parsed JSON dict with 'score' and 'rationale'.
+    """
+    from mistralai import Mistral
+
+    client = Mistral(api_key=api_key)
+    response = client.chat.complete(
+        model=model,
+        messages=[{"role": "user", "content": prompt}],
+        response_format={"type": "json_object"},
+    )
+    return json.loads(response.choices[0].message.content)
+
+
+def judge_topic(
+    document_id: str,
+    reference: str,
+    prediction: str,
+) -> JudgeScore:
+    """Score topic extraction quality using LLM-as-judge.
+
+    Args:
+        document_id: Document identifier.
+        reference: Ground truth topic.
+        prediction: Extracted topic.
+
+    Returns:
+        JudgeScore with 1-5 score and rationale.
+    """
+    settings = get_settings()
+    prompt = LLM_JUDGE_TOPIC_PROMPT.format(
+        reference=reference, prediction=prediction
+    )
+    result = _call_judge(prompt, settings.CHAT_MODEL, settings.MISTRAL_API_KEY)
+    return JudgeScore(
+        document_id=document_id,
+        metric_type="topic",
+        score=int(result.get("score", 1)),
+        rationale=result.get("rationale", ""),
+    )
+
+
+def judge_answer(
+    document_id: str,
+    question: str,
+    reference: str,
+    prediction: str,
+) -> JudgeScore:
+    """Score Q&A answer quality using LLM-as-judge.
+
+    Args:
+        document_id: Document identifier.
+        question: The question asked.
+        reference: Ground truth answer.
+        prediction: Extracted answer.
+
+    Returns:
+        JudgeScore with 1-5 score and rationale.
+    """
+    settings = get_settings()
+    prompt = LLM_JUDGE_ANSWER_PROMPT.format(
+        question=question, reference=reference, prediction=prediction
+    )
+    result = _call_judge(prompt, settings.CHAT_MODEL, settings.MISTRAL_API_KEY)
+    return JudgeScore(
+        document_id=document_id,
+        metric_type="answer",
+        score=int(result.get("score", 1)),
+        rationale=result.get("rationale", ""),
     )
 
 
 def compute_metrics(
     extractions: list[dict],
     ground_truth: list[dict],
-    fields: list[str],
-    model_version: str = "unknown",
 ) -> MetricsReport:
-    """Compute accuracy metrics for all specified fields.
+    """Compute all metrics for a batch of extractions vs ground truth.
 
     Args:
-        extractions: List of extraction dicts (keyed by image_id).
-        ground_truth: List of ground truth dicts (keyed by image_id).
-        fields: List of field names to evaluate.
-        model_version: Model version string for the report.
+        extractions: List of extraction dicts with document_id, extracted_text, topic, answer.
+        ground_truth: List of ground truth dicts with document_id, text, topic, answer, question.
 
     Returns:
-        MetricsReport with per-field and overall accuracy.
+        MetricsReport with all automated and judge scores.
     """
-    field_metrics = [
-        compute_field_accuracy(extractions, ground_truth, field)
-        for field in fields
-    ]
+    gt_by_id = {item["document_id"]: item for item in ground_truth}
 
-    total_correct = sum(fm.correct for fm in field_metrics)
-    total_comparisons = sum(fm.total for fm in field_metrics)
-    overall_accuracy = total_correct / total_comparisons if total_comparisons > 0 else 0.0
+    text_metrics_list = []
+    judge_scores_list = []
 
+    for extraction in extractions:
+        doc_id = extraction["document_id"]
+        gt = gt_by_id.get(doc_id)
+        if gt is None:
+            logger.warning("No ground truth for document %s, skipping", doc_id)
+            continue
+
+        # Automated text metrics
+        tm = compute_text_metrics(
+            document_id=doc_id,
+            reference=gt.get("text", ""),
+            hypothesis=extraction.get("extracted_text", ""),
+        )
+        text_metrics_list.append(tm)
+
+        # LLM-as-judge: topic
+        if gt.get("topic") and extraction.get("topic"):
+            js = judge_topic(doc_id, gt["topic"], extraction["topic"])
+            judge_scores_list.append(js)
+
+        # LLM-as-judge: answer
+        if gt.get("answer") and extraction.get("answer"):
+            ja = judge_answer(
+                doc_id, gt.get("question", ""), gt["answer"], extraction["answer"]
+            )
+            judge_scores_list.append(ja)
+
+    # Compute averages
+    avg_wer = sum(tm.wer for tm in text_metrics_list) / len(text_metrics_list) if text_metrics_list else 1.0
+    avg_rouge = sum(tm.rouge_l for tm in text_metrics_list) / len(text_metrics_list) if text_metrics_list else 0.0
+
+    topic_scores = [js.score for js in judge_scores_list if js.metric_type == "topic"]
+    answer_scores = [js.score for js in judge_scores_list if js.metric_type == "answer"]
+    avg_topic = sum(topic_scores) / len(topic_scores) if topic_scores else 0.0
+    avg_answer = sum(answer_scores) / len(answer_scores) if answer_scores else 0.0
+
+    settings = get_settings()
     report = MetricsReport(
         timestamp=timestamp_now(),
-        model_version=model_version,
-        total_images=len(extractions),
-        fields=field_metrics,
-        overall_accuracy=overall_accuracy,
+        ocr_model=settings.OCR_MODEL,
+        chat_model=settings.CHAT_MODEL,
+        total_documents=len(extractions),
+        avg_wer=avg_wer,
+        avg_rouge_l=avg_rouge,
+        avg_topic_score=avg_topic,
+        avg_answer_score=avg_answer,
+        text_metrics=text_metrics_list,
+        judge_scores=judge_scores_list,
     )
 
     logger.info(
-        "Metrics computed: overall_accuracy=%.2f%% (%d/%d)",
-        overall_accuracy * 100,
-        total_correct,
-        total_comparisons,
+        "Metrics: WER=%.3f, ROUGE-L=%.3f, Topic=%.1f/5, Answer=%.1f/5",
+        avg_wer, avg_rouge, avg_topic, avg_answer,
     )
 
     return report
