@@ -1,0 +1,38 @@
+# Environment
+.env
+*.pyc
+__pycache__/
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Data & results (downloaded at runtime)
+data/*
+!data/.gitkeep
+results/*
+!results/.gitkeep
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+~$*
+
+# Secrets
+.secrets/
+
+# Virtual environment
+venv/
+.venv/
+
+# Docs generated
+*.docx
+
+# Jupyter
+.ipynb_checkpoints/
