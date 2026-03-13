@@ -35,6 +35,7 @@ class JudgeScore(BaseModel):
     metric_type: str  # "topic" or "answer"
     score: int  # 1-5
     rationale: str
+    criteria: dict = {}  # {correctness, completeness, grounding} each 1-5
 
 
 class MetricsReport(BaseModel):
@@ -131,7 +132,7 @@ def _call_judge(prompt: str, model: str, api_key: str) -> dict:
         api_key: Mistral API key.
 
     Returns:
-        Parsed JSON dict with 'score' and 'rationale'.
+        Parsed JSON dict with 'score', 'rationale', and 'criteria'.
     """
     from mistralai import Mistral
 
@@ -141,7 +142,15 @@ def _call_judge(prompt: str, model: str, api_key: str) -> dict:
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"},
     )
-    return json.loads(response.choices[0].message.content)
+    try:
+        result = json.loads(response.choices[0].message.content)
+    except (json.JSONDecodeError, TypeError, AttributeError) as exc:
+        logger.warning("Judge JSON parse error: %s", exc)
+        return {"score": None, "rationale": "parse_error", "criteria": {}}
+
+    if "criteria" not in result:
+        result["criteria"] = {}
+    return result
 
 
 def judge_topic(
@@ -164,11 +173,13 @@ def judge_topic(
         reference=reference, prediction=prediction
     )
     result = _call_judge(prompt, settings.CHAT_MODEL, settings.MISTRAL_API_KEY)
+    score_val = result.get("score")
     return JudgeScore(
         document_id=document_id,
         metric_type="topic",
-        score=int(result.get("score", 1)),
+        score=int(score_val) if score_val is not None else 0,
         rationale=result.get("rationale", ""),
+        criteria=result.get("criteria", {}),
     )
 
 
@@ -194,11 +205,13 @@ def judge_answer(
         question=question, reference=reference, prediction=prediction
     )
     result = _call_judge(prompt, settings.CHAT_MODEL, settings.MISTRAL_API_KEY)
+    score_val = result.get("score")
     return JudgeScore(
         document_id=document_id,
         metric_type="answer",
-        score=int(result.get("score", 1)),
+        score=int(score_val) if score_val is not None else 0,
         rationale=result.get("rationale", ""),
+        criteria=result.get("criteria", {}),
     )
 
 

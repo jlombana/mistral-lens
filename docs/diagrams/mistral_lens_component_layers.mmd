@@ -7,26 +7,27 @@ flowchart LR
   subgraph Left[Input Systems]
     I1[Interactive User]
     I2[PDF and Question Upload]
-    I3[Dataset Splits repliqa_0 repliqa_3]
+    I3[Dataset Splits repliqa_1 repliqa_2 repliqa_3]
   end
 
   subgraph App[Mistral-Lens Application]
     direction TB
 
     subgraph L1[Presentation Layer]
-      P1[Gradio UI app/main.py\n3 Tabs: Extract - Evaluate - Business Case]
+      P1[Gradio UI app/main.py\n3 Tabs: Process - Evaluate - Business Case]
     end
 
     subgraph L2[Application Layer]
       A1[Orchestration Callbacks\nprocess_upload run_evaluation]
-      A2[Batch Evaluation Runner\nscripts/run_evaluation.py]
+      A2[Batch Evaluation Engine\napp/batch.py\nGenerator-based stratified eval]
     end
 
     subgraph L3[Domain Services Layer]
       D1[Extractor Service\napp/extractor.py\nOCR + Topic + QA pipeline]
-      D2[Metrics Service\napp/metrics.py\nWER + ROUGE-L + Topic Accuracy + LLM Judge]
+      D2[Metrics Service\napp/metrics.py\nWER + ROUGE-L + Topic Accuracy\nLLM Judge with criteria sub-scores]
       D3[Prompt Templates\napp/prompts.py\nFew-shot taxonomy + QA + Judge rubrics]
       D4[Retry and Utils\napp/retry.py app/utils.py\nExponential backoff + PDF encoding]
+      D5[Cache Service\napp/cache.py\nMD5-based PDF result cache]
     end
 
     subgraph L4[LLM Integration Layer via Mistral API]
@@ -39,13 +40,16 @@ flowchart LR
       C2[Topic Taxonomy\ndata/category_list.txt 17 categories]
       C4[Evaluation Data\ndata/*.jsonl + PDFs]
       C5[Results Store\nresults/*.json]
+      C6[Cache Store\nresults/cache/*.json]
     end
 
     P1 --> A1
+    P1 --> A2
     A1 --> D1
     A1 --> D2
     A2 --> D1
     A2 --> D2
+    A2 --> D5
 
     D1 --> D3
     D1 --> D4
@@ -61,12 +65,13 @@ flowchart LR
     D2 --> C1
     A2 --> C4
     D2 --> C5
+    D5 --> C6
   end
 
   subgraph Right[Output Systems]
     O1[Extracted Text Topic Answer]
-    O2[Evaluation KPIs\nWER ROUGE-L Topic Acc\nTopic Score Answer Score\nLatency Cost]
-    O3[Business Summary\nCost comparison vs incumbent]
+    O2[Evaluation KPIs\nWER ROUGE-L Topic Acc\nTopic Score Answer Score\nLatency Cost + Criteria Sub-scores]
+    O3[Dynamic Business Case\nROI projection with volume slider\nCost comparison vs incumbent]
   end
 
   I1 --> I2 --> P1
@@ -77,6 +82,6 @@ flowchart LR
   O2 --> O3
 
   class I1,I2,I3,O1,O2,O3 inout;
-  class P1,A1,A2,D1,D2,D3,D4,C1,C2,C4,C5 layer;
+  class P1,A1,A2,D1,D2,D3,D4,D5,C1,C2,C4,C5,C6 layer;
   class M1,M2 ext;
-  class C2,C4,C5 store;
+  class C2,C4,C5,C6 store;

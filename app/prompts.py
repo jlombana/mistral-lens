@@ -67,11 +67,16 @@ Score on a scale of 1 to 5:
 - 2: Loosely related — tangentially connected topics
 - 1: Unrelated — completely different subjects
 
+Evaluate each criterion individually:
+1. correctness: Does the predicted label identify the right subject area? (1-5)
+2. completeness: Does the predicted label capture the full scope of the topic? (1-5)
+3. grounding: Is the predicted label consistent with standard topic taxonomies? (1-5)
+
 Reference topic: {reference}
 Predicted topic: {prediction}
 
 Respond in JSON format only:
-{{"score": <1-5>, "rationale": "<brief explanation>"}}"""
+{{"score": <1-5>, "rationale": "<brief explanation>", "criteria": {{"correctness": <1-5>, "completeness": <1-5>, "grounding": <1-5>}}}}"""
 
 LLM_JUDGE_ANSWER_PROMPT = """You are an expert evaluator. Compare the predicted answer against the reference answer for a document question.
 
@@ -82,9 +87,14 @@ Score the prediction on a scale of 1 to 5:
 - 2: Poor — contains some relevant information but largely inaccurate
 - 1: Wrong — factually incorrect or completely unrelated
 
+Evaluate each criterion individually:
+1. correctness: Are the facts in the predicted answer accurate? (1-5)
+2. completeness: Does the predicted answer cover all key points from the reference? (1-5)
+3. grounding: Is the predicted answer grounded in the document text (no hallucinations)? (1-5)
+
 Question: {question}
 Reference answer: {reference}
 Predicted answer: {prediction}
 
 Respond in JSON format only:
-{{"score": <1-5>, "rationale": "<brief explanation>"}}"""
+{{"score": <1-5>, "rationale": "<brief explanation>", "criteria": {{"correctness": <1-5>, "completeness": <1-5>, "grounding": <1-5>}}}}"""
