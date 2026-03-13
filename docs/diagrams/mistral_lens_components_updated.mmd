@@ -1,0 +1,93 @@
+flowchart LR
+  classDef io fill:#EFF6FF,stroke:#2563EB,color:#1E3A8A,stroke-width:1px;
+  classDef layer fill:#FFF8F1,stroke:#F97316,color:#1A1A1A,stroke-width:1px;
+  classDef ext fill:#F3F4F6,stroke:#6B7280,color:#111827,stroke-width:1px;
+  classDef store fill:#ECFDF5,stroke:#10B981,color:#064E3B,stroke-width:1px;
+  classDef note fill:#FEF3C7,stroke:#D97706,color:#7C2D12,stroke-width:1px;
+
+  subgraph IN[Input systems]
+    I1[User Web UI]:::io
+    I2[PDF and Question]:::io
+    I3[Ground Truth for Evaluate tab]:::io
+    I4[Dataset files jsonl pdf]:::io
+  end
+
+  subgraph APP[Mistral Lens Application]
+    direction TB
+
+    subgraph L1[Presentation layer]
+      P1[Gradio app main py]:::layer
+    end
+
+    subgraph L2[Application orchestration]
+      A1[process_upload callback]:::layer
+      A2[run_evaluation callback]:::layer
+      A3[scripts run_evaluation py]:::layer
+    end
+
+    subgraph L3[Domain services]
+      D1[Extractor service app extractor py]:::layer
+      D2[Metrics service app metrics py]:::layer
+      D3[Prompt contracts app prompts py]:::layer
+      D4[Retry and utils app retry py app utils py]:::layer
+      D5[Config app config py]:::layer
+    end
+
+    subgraph L4[LLM OCR integration]
+      M1[Mistral OCR API mistral-ocr-latest]:::ext
+      M2[Mistral Chat API mistral-large-latest]:::ext
+      M3[Fine tuned topic model optional]:::ext
+      M4[Fine tuning jobs API optional]:::ext
+    end
+
+    subgraph L5[Data and artifacts]
+      S1[data category_list txt taxonomy]:::store
+      S2[data finetuned_model txt]:::store
+      S3[data repliqa jsonl and pdfs]:::store
+      S4[results json reports]:::store
+      S5[docs diagrams and architecture docs]:::store
+    end
+  end
+
+  subgraph OUT[Output systems]
+    O1[Extracted text topic answer]:::io
+    O2[Evaluation KPIs quality cost latency]:::io
+    O3[Business case narrative]:::io
+  end
+
+  I1 --> I2 --> P1
+  I3 --> P1
+  I4 --> A3
+
+  P1 --> A1
+  P1 --> A2
+  A1 --> D1
+  A2 --> D1
+  A2 --> D2
+  A3 --> D1
+  A3 --> D2
+
+  D1 --> D3
+  D1 --> D4
+  D2 --> D3
+  D2 --> D4
+  D1 --> D5
+  D2 --> D5
+
+  D1 --> M1
+  D1 --> M2
+  D1 -. optional .-> M3
+  D2 --> M2
+
+  D1 --> S1
+  D1 --> S2
+  A3 --> S3
+  D2 --> S4
+
+  D1 --> O1
+  D2 --> O2
+  P1 --> O3
+
+  FT_SCRIPT[scripts run_finetune py]:::layer --> M4
+  FT_SCRIPT --> S2
+  ENTITLE[Account entitlement required for fine tuning]:::note --> M4

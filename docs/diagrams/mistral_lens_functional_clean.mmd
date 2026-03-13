@@ -1,0 +1,90 @@
+flowchart TB
+  classDef base fill:#FFF8F1,stroke:#F97316,color:#1A1A1A,stroke-width:1px;
+  classDef ext fill:#F3F4F6,stroke:#9CA3AF,color:#111827,stroke-width:1px;
+  classDef data fill:#ECFDF5,stroke:#10B981,color:#064E3B,stroke-width:1px;
+
+  subgraph Inputs[Inputs]
+    U[User]
+    PDF[PDF Document]
+    Q[Optional Question]
+    GT[Optional Ground Truth text topic answer]
+  end
+
+  subgraph Runtime[Online Runtime]
+    UI[Gradio UI app/main.py\nUpload - Evaluate - Business Case]
+    ORCH[Callbacks process_upload run_evaluation]
+
+    subgraph Extract[Extraction Pipeline]
+      OCR[Step 1: OCR\nextract_text via mistral-ocr-latest]
+      TOPIC[Step 2: Topic Classification\nfew-shot taxonomy prompt\n17 categories + 4 examples]
+      QA[Step 3: Question Answering\nextract_answer]
+      OCR --> TOPIC --> QA
+    end
+
+    subgraph Eval[Evaluation Pipeline]
+      AUTO[Automated Metrics\nWER + ROUGE-L + Topic Accuracy]
+      JUDGE[LLM-as-Judge\nTopic Score + Answer Score 1-5]
+      OPS[Operational Metrics\nLatency + Cost]
+      REPORT[MetricsReport\n7 KPIs]
+      AUTO --> REPORT
+      JUDGE --> REPORT
+      OPS --> REPORT
+    end
+
+    UI --> ORCH
+    ORCH --> OCR
+    ORCH --> AUTO
+    ORCH --> JUDGE
+  end
+
+  subgraph AI[Mistral API Integration]
+    M_OCR[mistral-ocr-latest\n/v1/ocr]
+    M_CHAT[mistral-large-latest\n/v1/chat/completions]
+  end
+
+  subgraph Data[Data and Configuration]
+    TAX[data/category_list.txt\ntopic taxonomy 17 categories]
+    DS[data/*.jsonl + PDFs\nrepliqa splits]
+    CFG[app/config.py + .env\nAPI keys and model settings]
+  end
+
+  subgraph Offline[Offline Improvement Loop]
+    INSPECT[scripts/inspect_topics.py\ntopic distribution analysis]
+    BUILD[scripts/build_finetune_dataset.py\ngenerate training JSONL]
+    TRAIN[scripts/run_finetune.py\nlaunch Mistral fine-tuning]
+    BATCH[scripts/run_evaluation.py\nbatch evaluation CLI]
+    INSPECT --> BUILD --> TRAIN
+    DS --> BATCH
+    BATCH --> REPORT
+  end
+
+  subgraph Outputs[Outputs]
+    OUT1[Extracted Text + Topic + Answer]
+    OUT2[Quality and Performance KPIs]
+    OUT3[results/*.json]
+  end
+
+  U --> UI
+  PDF --> UI
+  Q --> UI
+  GT --> UI
+
+  OCR --> M_OCR
+  TOPIC --> M_CHAT
+  QA --> M_CHAT
+  JUDGE --> M_CHAT
+
+  TAX --> TOPIC
+  CFG --> OCR
+  CFG --> TOPIC
+  CFG --> QA
+
+  QA --> OUT1
+  REPORT --> OUT2
+  REPORT --> OUT3
+
+  DS --> INSPECT
+
+  class U,PDF,Q,GT,UI,ORCH,OCR,TOPIC,QA,AUTO,JUDGE,OPS,REPORT,INSPECT,BUILD,TRAIN,BATCH,OUT1,OUT2,OUT3 base;
+  class M_OCR,M_CHAT ext;
+  class TAX,DS,CFG data;

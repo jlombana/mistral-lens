@@ -1,0 +1,53 @@
+flowchart LR
+  classDef user fill:#EFF6FF,stroke:#2563EB,color:#1E3A8A,stroke-width:1px;
+  classDef app fill:#FFF8F1,stroke:#F97316,color:#1A1A1A,stroke-width:1px;
+  classDef data fill:#ECFDF5,stroke:#10B981,color:#064E3B,stroke-width:1px;
+  classDef ext fill:#F3F4F6,stroke:#6B7280,color:#111827,stroke-width:1px;
+  classDef note fill:#FEF3C7,stroke:#D97706,color:#7C2D12,stroke-width:1px;
+
+  U[User]:::user --> UI[Gradio UI app main py]:::app
+  PDF[PDF Upload]:::user --> UI
+  Q[Question optional]:::user --> UI
+
+  UI --> ORCH[Orchestration callbacks]:::app
+
+  ORCH --> OCR[Step 1 OCR extract_text]:::app
+  OCR --> OCR_API[mistral-ocr-latest]:::ext
+
+  OCR --> TOPIC[Step 2 Topic classify]:::app
+  TAX[data category_list txt]:::data --> TOPIC
+  FTREF[data finetuned_model txt optional]:::data --> TOPIC
+  TOPIC --> CHAT_API[mistral-large-latest or fine tuned]:::ext
+
+  TOPIC --> QA[Step 3 QA optional]:::app
+  QA --> CHAT_API
+
+  ORCH --> OUT1[Outputs text topic answer]:::user
+
+  ORCH --> EVAL[Evaluation mode single doc]:::app
+  GT[Ground truth text topic answer]:::user --> EVAL
+  EVAL --> METRICS[WER ROUGE-L TopicAcc]:::app
+  EVAL --> JUDGE[LLM judge Topic Answer]:::app
+  METRICS --> REPORT[Evaluation report]:::app
+  JUDGE --> REPORT
+  REPORT --> OUT2[KPIs latency tokens cost quality]:::user
+  REPORT --> RES[results json]:::data
+
+  subgraph OfflineLoop[Offline loop scripts]
+    DL[scripts download_dataset py]:::app
+    EV[scripts run_evaluation py]:::app
+    INS[scripts inspect_topics py]:::app
+    BUILD[scripts build_finetune_dataset py]:::app
+    FT[scripts run_finetune py]:::app
+    ENT[Fine tune entitlement required]:::note
+
+    DL --> EV
+    EV --> INS
+    INS --> BUILD
+    BUILD --> FT
+    FT --> ENT
+  end
+
+  DATA[data jsonl and pdfs]:::data --> DL
+  DATA --> EV
+  EV --> RES

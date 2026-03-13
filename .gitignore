@@ -36,3 +36,6 @@ venv/
 
 # Jupyter
 .ipynb_checkpoints/
+
+# Claude Code local state
+.claude/

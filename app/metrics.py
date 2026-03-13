@@ -48,8 +48,21 @@ class MetricsReport(BaseModel):
     avg_rouge_l: float
     avg_topic_score: float
     avg_answer_score: float
+    avg_topic_accuracy: float = 0.0
+    avg_latency_s: float = 0.0
+    avg_cost_per_doc_usd: float = 0.0
+    total_tokens: int = 0
+    total_cost_usd: float = 0.0
     text_metrics: list[TextMetrics]
     judge_scores: list[JudgeScore]
+
+
+def compute_topic_accuracy(predicted: str, reference: str) -> float:
+    """Exact match accuracy for topic classification.
+
+    Returns 1.0 if predicted matches reference (case-insensitive, stripped), 0.0 otherwise.
+    """
+    return float(predicted.strip().lower() == reference.strip().lower())
 
 
 def compute_wer(reference: str, hypothesis: str) -> float:
@@ -206,6 +219,7 @@ def compute_metrics(
 
     text_metrics_list = []
     judge_scores_list = []
+    topic_accuracies = []
 
     for extraction in extractions:
         doc_id = extraction["document_id"]
@@ -222,8 +236,10 @@ def compute_metrics(
         )
         text_metrics_list.append(tm)
 
-        # LLM-as-judge: topic
+        # Topic: exact match accuracy + LLM-as-judge
         if gt.get("topic") and extraction.get("topic"):
+            topic_acc = compute_topic_accuracy(extraction["topic"], gt["topic"])
+            topic_accuracies.append(topic_acc)
             js = judge_topic(doc_id, gt["topic"], extraction["topic"])
             judge_scores_list.append(js)
 
@@ -243,6 +259,8 @@ def compute_metrics(
     avg_topic = sum(topic_scores) / len(topic_scores) if topic_scores else 0.0
     avg_answer = sum(answer_scores) / len(answer_scores) if answer_scores else 0.0
 
+    avg_topic_acc = sum(topic_accuracies) / len(topic_accuracies) if topic_accuracies else 0.0
+
     settings = get_settings()
     report = MetricsReport(
         timestamp=timestamp_now(),
@@ -253,13 +271,14 @@ def compute_metrics(
         avg_rouge_l=avg_rouge,
         avg_topic_score=avg_topic,
         avg_answer_score=avg_answer,
+        avg_topic_accuracy=avg_topic_acc,
         text_metrics=text_metrics_list,
         judge_scores=judge_scores_list,
     )
 
     logger.info(
-        "Metrics: WER=%.3f, ROUGE-L=%.3f, Topic=%.1f/5, Answer=%.1f/5",
-        avg_wer, avg_rouge, avg_topic, avg_answer,
+        "Metrics: WER=%.3f, ROUGE-L=%.3f, Topic=%.1f/5, TopicAcc=%.1f%%, Answer=%.1f/5",
+        avg_wer, avg_rouge, avg_topic, avg_topic_acc * 100, avg_answer,
     )
 
     return report

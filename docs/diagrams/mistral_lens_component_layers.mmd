@@ -1,0 +1,82 @@
+flowchart LR
+  classDef inout fill:#EFF6FF,stroke:#2563EB,color:#1E3A8A,stroke-width:1px;
+  classDef layer fill:#FFF8F1,stroke:#F97316,color:#1A1A1A,stroke-width:1px;
+  classDef ext fill:#F3F4F6,stroke:#6B7280,color:#111827,stroke-width:1px;
+  classDef store fill:#ECFDF5,stroke:#10B981,color:#064E3B,stroke-width:1px;
+
+  subgraph Left[Input Systems]
+    I1[Interactive User]
+    I2[PDF and Question Upload]
+    I3[Dataset Splits repliqa_0 repliqa_3]
+  end
+
+  subgraph App[Mistral-Lens Application]
+    direction TB
+
+    subgraph L1[Presentation Layer]
+      P1[Gradio UI app/main.py\n3 Tabs: Extract - Evaluate - Business Case]
+    end
+
+    subgraph L2[Application Layer]
+      A1[Orchestration Callbacks\nprocess_upload run_evaluation]
+      A2[Batch Evaluation Runner\nscripts/run_evaluation.py]
+    end
+
+    subgraph L3[Domain Services Layer]
+      D1[Extractor Service\napp/extractor.py\nOCR + Topic + QA pipeline]
+      D2[Metrics Service\napp/metrics.py\nWER + ROUGE-L + Topic Accuracy + LLM Judge]
+      D3[Prompt Templates\napp/prompts.py\nFew-shot taxonomy + QA + Judge rubrics]
+      D4[Retry and Utils\napp/retry.py app/utils.py\nExponential backoff + PDF encoding]
+    end
+
+    subgraph L4[LLM Integration Layer via Mistral API]
+      M1[OCR Client\nmistral-ocr-latest /v1/ocr]
+      M2[Chat Client\nmistral-large-latest /v1/chat/completions]
+    end
+
+    subgraph L5[Configuration and Data Layer]
+      C1[Runtime Settings\napp/config.py .env]
+      C2[Topic Taxonomy\ndata/category_list.txt 17 categories]
+      C4[Evaluation Data\ndata/*.jsonl + PDFs]
+      C5[Results Store\nresults/*.json]
+    end
+
+    P1 --> A1
+    A1 --> D1
+    A1 --> D2
+    A2 --> D1
+    A2 --> D2
+
+    D1 --> D3
+    D1 --> D4
+    D2 --> D3
+    D2 --> D4
+
+    D1 --> M1
+    D1 --> M2
+    D2 --> M2
+
+    D1 --> C1
+    D1 --> C2
+    D2 --> C1
+    A2 --> C4
+    D2 --> C5
+  end
+
+  subgraph Right[Output Systems]
+    O1[Extracted Text Topic Answer]
+    O2[Evaluation KPIs\nWER ROUGE-L Topic Acc\nTopic Score Answer Score\nLatency Cost]
+    O3[Business Summary\nCost comparison vs incumbent]
+  end
+
+  I1 --> I2 --> P1
+  I3 --> A2
+
+  D1 --> O1
+  D2 --> O2
+  O2 --> O3
+
+  class I1,I2,I3,O1,O2,O3 inout;
+  class P1,A1,A2,D1,D2,D3,D4,C1,C2,C4,C5 layer;
+  class M1,M2 ext;
+  class C2,C4,C5 store;

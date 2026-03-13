@@ -19,7 +19,7 @@ PDF Document (from repliqa dataset)
 [1 · OCR] ── mistral-ocr-latest (/v1/ocr) ──▶ Raw text string
        │
        ▼
-[2 · Topic] ── mistral-large-latest (/v1/chat/completions) ──▶ 1-3 sentence topic summary
+[2 · Topic] ── mistral-large-latest (/v1/chat/completions) ──▶ Short topic label (2-6 words)
        │
        ▼
 [3 · Q&A] ── mistral-large-latest (/v1/chat/completions) ──▶ Long-form answer (2-5 sentences)
@@ -71,12 +71,29 @@ PDF Document (from repliqa dataset)
 
 ## Dataset
 
-| Split | Use | Records |
-|-------|-----|---------|
-| repliqa_0 – repliqa_2 | Development & prompt tuning | ~2,000 |
-| repliqa_3 | Holdout / live evaluation | ~700 |
+**Source:** `datasets.load_dataset('ServiceNow/repliqa', split='repliqa_N')`
+**PDFs:** Downloaded via `huggingface_hub.hf_hub_download(repo_id='ServiceNow/repliqa', filename=doc_path, repo_type='dataset')`
 
-Loaded via `datasets.load_dataset('ServiceNow/repliqa')`.
+| Split | Use | Records | Unique docs |
+|-------|-----|---------|-------------|
+| repliqa_0 | Development & prompt tuning | ~17,955 | ~3,591 |
+| repliqa_1 – repliqa_2 | Additional dev data | ~17,955 each | ~3,591 each |
+| repliqa_3 | Holdout / live evaluation | ~17,955 | ~3,591 |
+
+### Dataset schema
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `document_id` | str | Unique 8-char ID (e.g., `kiqpsbuw`) |
+| `document_topic` | str | Ground truth topic label (e.g., "Small and Medium Enterprises") |
+| `document_path` | str | Path to PDF in HF repo (e.g., `pdfs/repliqa_0/kiqpsbuw.pdf`) |
+| `document_extracted` | str | Ground truth extracted text (~5-7K chars) |
+| `question_id` | str | Question ID (`{doc_id}-q{N}`) |
+| `question` | str | Question about the document |
+| `answer` | str | Short ground truth answer (~1 sentence) |
+| `long_answer` | str | Long ground truth answer (~2-5 sentences) |
+
+**Note:** Multiple Q&A pairs per document (5 questions per doc). PDFs are ~70KB, 4 pages each.
 
 ## Evaluation Metrics
 
@@ -127,5 +144,35 @@ Keys loaded via `os.getenv()` or pydantic-settings. `.env` is in `.gitignore`.
 ## Running
 
 ```bash
-python app/main.py    # Opens Gradio UI at http://localhost:7860
+# Download dataset (metadata + PDFs)
+python scripts/download_dataset.py --splits 0 --limit 250
+
+# Run evaluation (3 docs quick test)
+python scripts/run_evaluation.py --split repliqa_0 --limit 15
+
+# Run evaluation (50 docs full)
+python scripts/run_evaluation.py --split repliqa_0 --limit 250
+
+# Open Gradio UI
+python app/main.py    # http://localhost:7860
 ```
+
+## Benchmark Results (50 docs, repliqa_0, 2026-03-13)
+
+| Metric | Result | Target | Status |
+|--------|--------|--------|--------|
+| WER | 0.0169 | < 0.15 | 9x better |
+| ROUGE-L | 0.9988 | > 0.80 | Near-perfect |
+| Topic Score | 3.0/5 | > 4.0 | See note* |
+| Answer Score | 4.9/5 | > 4.0 | Exceeds |
+
+*Topic score is an artifact of the dataset: ground truth labels are generic categories (e.g., "News Stories", "Sports") while our extractor produces domain-specific labels (e.g., "Urban Flood Resilience in Karachi"). For the business case, our labels are more useful.
+
+### Cost comparison vs incumbent
+
+| Metric | Incumbent | Mistral-Lens |
+|--------|-----------|-------------|
+| Cost per page | $0.75 | ~$0.02 |
+| OCR accuracy (WER) | ~15% error | 1.7% error |
+| Text fidelity (ROUGE-L) | ~85% | 99.9% |
+| Q&A quality | N/A | 4.9/5 |

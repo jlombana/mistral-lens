@@ -1,0 +1,44 @@
+flowchart LR
+  %% Users and interface
+  U[User / Partner Demo] --> UI[Gradio UI\napp/main.py]
+
+  %% App orchestration
+  UI --> ORCH[Orchestration Callbacks\nprocess_upload / run_evaluation]
+
+  %% Extraction pipeline
+  ORCH --> EX[Extractor Service\napp/extractor.py]
+  EX --> OCR[Mistral OCR API\nmistral-ocr-latest]
+  EX --> CHAT[Mistral Chat API\nmistral-large-latest]
+  EX --> PROMPTS[Prompt Templates\napp/prompts.py\nfew-shot taxonomy + Q&A]
+  EX --> RETRY[Retry + Backoff\napp/retry.py]
+  EX --> CFG[Configuration\napp/config.py]
+  EX --> UTILS[Utilities\napp/utils.py]
+  EX --> TAX[Topic Taxonomy\ndata/category_list.txt\n17 categories]
+
+  %% Metrics pipeline
+  ORCH --> MET[Metrics Engine\napp/metrics.py]
+  MET --> AUTO[Automated Metrics\nWER + ROUGE-L\n+ Topic Accuracy]
+  MET --> JUDGE[LLM-as-Judge\nMistral Chat JSON\nTopic + Answer scoring]
+  MET --> PROMPTS
+  MET --> RETRY
+  MET --> CFG
+
+  %% Data and scripts
+  DS[Dataset JSONL + PDFs\ndata/] --> EX
+  DS --> SCRIPTS[CLI Scripts\nscripts/*.py]
+  SCRIPTS --> MET
+  SCRIPTS --> EX
+
+  %% Persistence
+  ORCH --> RES[Results JSON\nresults/]
+  SCRIPTS --> RES
+
+  %% Testing
+  T[Pytest Suite\ntests/*.py] -. validates .-> EX
+  T -. validates .-> MET
+
+  %% Styling
+  classDef box fill:#FFF8F1,stroke:#F97316,color:#1A1A1A,stroke-width:1px;
+  classDef data fill:#ECFDF5,stroke:#10B981,color:#064E3B,stroke-width:1px;
+  class UI,ORCH,EX,MET,SCRIPTS,RES,PROMPTS,RETRY,CFG,UTILS,AUTO,JUDGE,OCR,CHAT,T,U box;
+  class DS,TAX data;

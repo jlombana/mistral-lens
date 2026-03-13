@@ -8,6 +8,7 @@ Step 3: Raw text + question → long-form answer via mistral-large-latest
 from __future__ import annotations
 
 import logging
+import time
 from pathlib import Path
 
 from pydantic import BaseModel
@@ -16,6 +17,18 @@ from app.config import get_settings
 from app.prompts import QA_EXTRACTION_PROMPT, TOPIC_EXTRACTION_PROMPT
 from app.retry import retry
 from app.utils import pdf_to_base64, timestamp_now
+
+# Load category taxonomy and optional fine-tuned model at import time
+_CATEGORY_LIST_PATH = Path(__file__).resolve().parent.parent / "data" / "category_list.txt"
+_FINETUNED_MODEL_PATH = Path(__file__).resolve().parent.parent / "data" / "finetuned_model.txt"
+
+TOPIC_CATEGORIES: str | None = None
+if _CATEGORY_LIST_PATH.exists():
+    TOPIC_CATEGORIES = _CATEGORY_LIST_PATH.read_text().strip()
+
+FINETUNED_TOPIC_MODEL: str | None = None
+if _FINETUNED_MODEL_PATH.exists():
+    FINETUNED_TOPIC_MODEL = _FINETUNED_MODEL_PATH.read_text().strip()
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +44,13 @@ class ExtractionResult(BaseModel):
     topic: str
     answer: str | None = None
     question: str | None = None
+    latency_ocr_s: float = 0.0
+    latency_topic_s: float = 0.0
+    latency_answer_s: float = 0.0
+    latency_total_s: float = 0.0
+    tokens_prompt: int = 0
+    tokens_completion: int = 0
+    tokens_total: int = 0
 
 
 @retry(max_retries=10, base_delay=2.0, max_delay=60.0)
@@ -62,8 +82,17 @@ def _call_ocr(pdf_base64: str, model: str, api_key: str) -> str:
     return "\n\n".join(pages_text)
 
 
+class _ChatResult:
+    """Container for chat response text + token usage."""
+
+    def __init__(self, text: str, prompt_tokens: int, completion_tokens: int):
+        self.text = text
+        self.prompt_tokens = prompt_tokens
+        self.completion_tokens = completion_tokens
+
+
 @retry(max_retries=10, base_delay=2.0, max_delay=60.0)
-def _call_chat(prompt: str, model: str, api_key: str) -> str:
+def _call_chat(prompt: str, model: str, api_key: str) -> _ChatResult:
     """Call Mistral chat API with a prompt.
 
     Args:
@@ -72,7 +101,7 @@ def _call_chat(prompt: str, model: str, api_key: str) -> str:
         api_key: Mistral API key.
 
     Returns:
-        Model response text.
+        _ChatResult with text and token counts.
     """
     from mistralai import Mistral
 
@@ -81,7 +110,12 @@ def _call_chat(prompt: str, model: str, api_key: str) -> str:
         model=model,
         messages=[{"role": "user", "content": prompt}],
     )
-    return response.choices[0].message.content
+    usage = response.usage
+    return _ChatResult(
+        text=response.choices[0].message.content,
+        prompt_tokens=usage.prompt_tokens if usage else 0,
+        completion_tokens=usage.completion_tokens if usage else 0,
+    )
 
 
 def extract_text(pdf_path: Path) -> str:
@@ -100,18 +134,32 @@ def extract_text(pdf_path: Path) -> str:
 
 
 def extract_topic(text: str) -> str:
-    """Extract topic summary from document text.
+    """Extract topic from document text using taxonomy classification.
+
+    Uses a fixed category taxonomy when available (from data/category_list.txt).
+    Uses fine-tuned model if available (from data/finetuned_model.txt),
+    otherwise falls back to mistral-large-latest.
 
     Args:
         text: Raw text extracted from the document.
 
     Returns:
-        Topic summary string (1-3 sentences).
+        Topic category string.
     """
     settings = get_settings()
-    prompt = TOPIC_EXTRACTION_PROMPT.format(text=text)
-    logger.info("Extracting topic summary")
-    return _call_chat(prompt, settings.CHAT_MODEL, settings.MISTRAL_API_KEY)
+    model = FINETUNED_TOPIC_MODEL or settings.CHAT_MODEL
+
+    if TOPIC_CATEGORIES:
+        prompt = TOPIC_EXTRACTION_PROMPT.format(
+            categories=TOPIC_CATEGORIES, text=text[:2000]
+        )
+    else:
+        from app.prompts import TOPIC_EXTRACTION_PROMPT_OPEN
+        prompt = TOPIC_EXTRACTION_PROMPT_OPEN.format(text=text)
+
+    logger.info("Extracting topic (model=%s, taxonomy=%s)", model, bool(TOPIC_CATEGORIES))
+    result = _call_chat(prompt, model, settings.MISTRAL_API_KEY)
+    return result.text
 
 
 def extract_answer(text: str, question: str) -> str:
@@ -127,7 +175,8 @@ def extract_answer(text: str, question: str) -> str:
     settings = get_settings()
     prompt = QA_EXTRACTION_PROMPT.format(text=text, question=question)
     logger.info("Extracting answer for question: %s", question[:50])
-    return _call_chat(prompt, settings.CHAT_MODEL, settings.MISTRAL_API_KEY)
+    result = _call_chat(prompt, settings.CHAT_MODEL, settings.MISTRAL_API_KEY)
+    return result.text
 
 
 def extract_document(
@@ -147,19 +196,45 @@ def extract_document(
     """
     settings = get_settings()
     doc_id = document_id or pdf_path.stem
+    total_prompt_tokens = 0
+    total_completion_tokens = 0
 
     logger.info("Processing document: %s", doc_id)
 
     # Step 1: OCR
-    extracted_text = extract_text(pdf_path)
+    t0 = time.perf_counter()
+    pdf_base64 = pdf_to_base64(pdf_path)
+    extracted_text = _call_ocr(pdf_base64, settings.OCR_MODEL, settings.MISTRAL_API_KEY)
+    latency_ocr = time.perf_counter() - t0
 
-    # Step 2: Topic
-    topic = extract_topic(extracted_text)
+    # Step 2: Topic (taxonomy classification)
+    t0 = time.perf_counter()
+    topic_model = FINETUNED_TOPIC_MODEL or settings.CHAT_MODEL
+    if TOPIC_CATEGORIES:
+        topic_prompt = TOPIC_EXTRACTION_PROMPT.format(
+            categories=TOPIC_CATEGORIES, text=extracted_text[:2000]
+        )
+    else:
+        from app.prompts import TOPIC_EXTRACTION_PROMPT_OPEN
+        topic_prompt = TOPIC_EXTRACTION_PROMPT_OPEN.format(text=extracted_text)
+    topic_result = _call_chat(topic_prompt, topic_model, settings.MISTRAL_API_KEY)
+    latency_topic = time.perf_counter() - t0
+    total_prompt_tokens += topic_result.prompt_tokens
+    total_completion_tokens += topic_result.completion_tokens
 
     # Step 3: Q&A (optional)
     answer = None
+    latency_answer = 0.0
     if question:
-        answer = extract_answer(extracted_text, question)
+        t0 = time.perf_counter()
+        qa_prompt = QA_EXTRACTION_PROMPT.format(text=extracted_text, question=question)
+        qa_result = _call_chat(qa_prompt, settings.CHAT_MODEL, settings.MISTRAL_API_KEY)
+        latency_answer = time.perf_counter() - t0
+        answer = qa_result.text
+        total_prompt_tokens += qa_result.prompt_tokens
+        total_completion_tokens += qa_result.completion_tokens
+
+    latency_total = latency_ocr + latency_topic + latency_answer
 
     return ExtractionResult(
         document_id=doc_id,
@@ -167,9 +242,16 @@ def extract_document(
         ocr_model=settings.OCR_MODEL,
         chat_model=settings.CHAT_MODEL,
         extracted_text=extracted_text,
-        topic=topic,
+        topic=topic_result.text,
         answer=answer,
         question=question,
+        latency_ocr_s=round(latency_ocr, 3),
+        latency_topic_s=round(latency_topic, 3),
+        latency_answer_s=round(latency_answer, 3),
+        latency_total_s=round(latency_total, 3),
+        tokens_prompt=total_prompt_tokens,
+        tokens_completion=total_completion_tokens,
+        tokens_total=total_prompt_tokens + total_completion_tokens,
     )
 
 
