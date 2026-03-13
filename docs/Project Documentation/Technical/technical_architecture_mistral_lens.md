@@ -112,6 +112,80 @@ The Business Case tab shows pre-calculated results from batch evaluation — not
 | Latency | Per-step timing | — | ~7.1s/doc |
 | Cost | Token-based estimation | — | $0.004/doc |
 
+### Per-Document Metric Examples (real data from repliqa_3)
+
+Below are real metric values from individual documents in the evaluation set to illustrate what each metric captures:
+
+#### 1. WER (Word Error Rate) — automated via `jiwer`
+
+Measures how many words the OCR output gets wrong compared to ground truth. Lower is better (0.0 = perfect).
+
+| Document | WER | Interpretation |
+|----------|-----|----------------|
+| `lgnumnth` | 0.0125 | 1.25% of words differ — near-perfect OCR |
+| `mpzociqz` | 0.0193 | 1.93% word error — excellent |
+| `luvmserj` | 0.0226 | 2.26% word error — still well under 15% target |
+
+#### 2. ROUGE-L — automated via `rouge-score`
+
+Measures the longest common subsequence between OCR output and ground truth. Higher is better (1.0 = perfect).
+
+| Document | ROUGE-L | Interpretation |
+|----------|---------|----------------|
+| `mpzociqz` | 1.0000 | Perfect text recovery |
+| `lhauokcy` | 0.9994 | Near-perfect — tiny punctuation difference |
+| `mljudppg` | 0.9979 | 99.8% overlap — minor formatting diff |
+
+#### 3. Topic Accuracy — exact string match (case-insensitive)
+
+Binary metric: 1.0 if the predicted category exactly matches ground truth, 0.0 otherwise.
+
+| Document | Ground Truth | Predicted | Accuracy | Notes |
+|----------|-------------|-----------|----------|-------|
+| `lhauokcy` | Local News | Local News | 1.0 | Exact match |
+| `wozwonnq` | Regional Cuisine and Recipes | Regional Cuisine and Recipes | 1.0 | Exact match |
+| `mljudppg` | News Stories | Local Politics and Governance | 0.0 | Borderline — Jakarta election article |
+
+#### 4. Topic Score — LLM-as-judge (1-5 scale)
+
+`mistral-large-latest` scores semantic similarity between predicted and reference topic using a structured rubric.
+
+| Document | Score | Rationale (from LLM judge) |
+|----------|-------|---------------------------|
+| `wozwonnq` | 5/5 | *"The predicted topic label is an exact semantic match to the reference topic label, as both refer to the same subject area without any variation in meaning or focus."* |
+| `lhauokcy` | 5/5 | *"The predicted topic label is an exact semantic match to the reference topic label, both referring to the same subject area."* |
+| `mljudppg` | 3/5 | *"Both topics relate to current events and public affairs, but 'News Stories' is a broader category that could encompass many subjects, while 'Local Politics and Governance' is a specific subset. They overlap in subject area but have different emphases."* |
+
+#### 5. Answer Score — LLM-as-judge (1-5 scale)
+
+`mistral-large-latest` scores factual accuracy and completeness of the Q&A answer against ground truth.
+
+| Document | Score | Rationale (from LLM judge) |
+|----------|-------|---------------------------|
+| `mljudppg` | 5/5 | *"The predicted answer perfectly matches the reference answer in both content and accuracy. It correctly identifies Amira Bintang as the upstart candidate, highlights her social activism background, and mentions her key platforms."* |
+| `wozwonnq` | 5/5 | *"The predicted answer is nearly identical to the reference answer, capturing all key details: the innovator (Morimoto Shigetada), the innovation (adding miso paste to pork-based broth), the timeframe (December 1954)."* |
+| `luvmserj` | 4/5 | *"The predicted answer captures the key information about the NutriEd in-school programs targeting school-aged children, with minor phrasing differences."* |
+
+#### 6. Latency — per-step timing (seconds)
+
+Broken down into OCR, topic classification, and Q&A steps.
+
+| Document | OCR | Topic | Q&A | Total |
+|----------|-----|-------|-----|-------|
+| `mljudppg` | 1.8s | 0.5s | 2.1s | 4.4s |
+| `luvmserj` | 2.1s | 0.6s | 2.8s | 5.5s |
+| `mpzociqz` | 1.7s | 0.5s | 3.2s | 5.4s |
+
+#### 7. Cost — token-based estimation (USD)
+
+Estimated from token usage at Mistral API pricing ($2.00/1M input, $6.00/1M output).
+
+| Document | Prompt Tokens | Completion Tokens | Est. Cost |
+|----------|--------------|-------------------|-----------|
+| `mljudppg` | ~1,200 | ~150 | $0.003 |
+| `luvmserj` | ~1,400 | ~180 | $0.004 |
+| Average (15 docs) | ~1,300 | ~160 | $0.004/doc |
+
 ### Topic Classification Approach
 
 The topic classifier uses a **few-shot taxonomy prompt** with 17 predefined categories from the repliqa dataset. The prompt includes:
