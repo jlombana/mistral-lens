@@ -1,11 +1,20 @@
 """Prompt templates for Mistral-Lens extraction and evaluation pipeline.
 
-Contains all prompt templates used by the extractor and metrics modules.
+Versioned topic prompts:
+  v1 — instruction only (baseline)
+  v2 — instruction + taxonomy
+  v3 — instruction + taxonomy + 3 few-shot (production)
+
+QA prompt with 1 few-shot example.
+Judge prompts without few-shot (impartial).
 """
 
 from __future__ import annotations
 
-TOPIC_EXTRACTION_PROMPT_OPEN = """You are a document analyst. Given the following text extracted from a PDF document, identify the primary topic.
+# ---------------------------------------------------------------------------
+# Topic classification — v1 (baseline, instruction only)
+# ---------------------------------------------------------------------------
+TOPIC_PROMPT_V1 = """You are a document analyst. Given the following text extracted from a PDF document, identify the primary topic.
 
 Return ONLY a short topic label (2-6 words), like "Small and Medium Enterprises" or "Climate Change Policy". Do NOT write full sentences or explanations.
 
@@ -14,7 +23,21 @@ Document text:
 
 Topic:"""
 
-TOPIC_EXTRACTION_PROMPT = """Classify the following document into exactly one of these categories:
+# ---------------------------------------------------------------------------
+# Topic classification — v2 (instruction + taxonomy)
+# ---------------------------------------------------------------------------
+TOPIC_PROMPT_V2 = """Classify the following document into exactly one of these categories:
+{categories}
+
+Return only the exact category name from the list above, nothing else.
+
+Document:
+{text}"""
+
+# ---------------------------------------------------------------------------
+# Topic classification — v3 (instruction + taxonomy + 3 few-shot) — PRODUCTION
+# ---------------------------------------------------------------------------
+TOPIC_PROMPT_V3 = """Classify the following document into exactly one of these categories:
 {categories}
 
 Important distinctions:
@@ -28,14 +51,11 @@ When a document reports on city council decisions or local infrastructure, class
 
 Here are some examples:
 
-Document: "Hurricane Elara Struck San Juan with Unprecedented Force. San Juan, Puerto Rico -- San Juan has been hit hard by Hurricane Elara, one of the strongest storms ever to strike recently..."
-Category: News Stories
-
-Document: "Ottawa City Council Affirms Investment In Infrastructure Upgrade. Ottawa City Council held an intense marathon session to devise an extensive plan for infrastructure enhancement across Ottawa..."
-Category: Local News
-
 Document: "On the Campaign Trail: Strategic Moves in Bhopal's Municipal Election. As municipal elections approach in Bhopal, candidates have begun formulating sophisticated strategies..."
 Category: Local Politics and Governance
+
+Document: "Ottawa City Council Affirms Investment In Infrastructure Upgrade. Ottawa City Council held an intense marathon session to devise an extensive plan for infrastructure enhancement across Ottawa..."
+Category: Local Economy and Market
 
 Document: "Community Conservation Initiatives: Local Initiatives to Revitalize Urban Environments. At a time of growing environmental concerns and diminishing green spaces, grassroots conservation initiatives..."
 Category: Local Environmental Issues
@@ -45,9 +65,25 @@ Now classify this document. Return only the exact category name, nothing else.
 Document:
 {text}"""
 
+# Active topic prompt — used by extractor.py
+TOPIC_EXTRACTION_PROMPT = TOPIC_PROMPT_V3
+
+# Legacy alias
+TOPIC_EXTRACTION_PROMPT_OPEN = TOPIC_PROMPT_V1
+
+# ---------------------------------------------------------------------------
+# Q&A extraction — with 1 few-shot example
+# ---------------------------------------------------------------------------
 QA_EXTRACTION_PROMPT = """You are a document analyst. Given the following text extracted from a PDF document and a question, provide a detailed answer based solely on the document content.
 
-Your answer should be 2-5 sentences long and directly address the question using information from the text.
+Your answer should be 2-5 sentences long and directly address the question using information from the text. Do not use any external knowledge — only information present in the document.
+
+Example:
+Document: "The Sapphire Coast Marine Reserve was established in 2019 to protect over 200 species of marine life. Dr. Elena Vasquez led the initial survey team, documenting coral formations spanning 15 kilometers."
+Question: "Who led the marine survey and what did they find?"
+Answer: Dr. Elena Vasquez led the initial survey team at the Sapphire Coast Marine Reserve. The team documented coral formations spanning 15 kilometers across the reserve, which was established in 2019 to protect over 200 species of marine life.
+
+Now answer the following:
 
 Document text:
 {text}
@@ -56,16 +92,19 @@ Question: {question}
 
 Answer:"""
 
+# ---------------------------------------------------------------------------
+# LLM-as-judge — Topic (no few-shot, impartial)
+# ---------------------------------------------------------------------------
 LLM_JUDGE_TOPIC_PROMPT = """You are an expert evaluator. Compare the predicted topic label against the reference topic label for a document.
 
 Both are short labels (a few words). Score based on SEMANTIC equivalence, not exact wording. Two labels that refer to the same subject area should score high even if phrased differently.
 
 Score on a scale of 1 to 5:
-- 5: Same topic — semantically equivalent (e.g., "SME Entrepreneurship" vs "Small and Medium Enterprises")
-- 4: Very close — same broad domain with slight focus difference
-- 3: Related — overlapping subject area but different emphasis
-- 2: Loosely related — tangentially connected topics
-- 1: Unrelated — completely different subjects
+- 5: Correct, complete, and grounded — semantically equivalent labels
+- 4: Minor omission — same broad domain with slight focus difference
+- 3: Partially correct — overlapping subject area but different emphasis
+- 2: Mostly incorrect — tangentially connected topics
+- 1: Incorrect — completely different subjects
 
 Evaluate each criterion individually:
 1. correctness: Does the predicted label identify the right subject area? (1-5)
@@ -78,14 +117,17 @@ Predicted topic: {prediction}
 Respond in JSON format only:
 {{"score": <1-5>, "rationale": "<brief explanation>", "criteria": {{"correctness": <1-5>, "completeness": <1-5>, "grounding": <1-5>}}}}"""
 
+# ---------------------------------------------------------------------------
+# LLM-as-judge — Answer (no few-shot, impartial)
+# ---------------------------------------------------------------------------
 LLM_JUDGE_ANSWER_PROMPT = """You are an expert evaluator. Compare the predicted answer against the reference answer for a document question.
 
 Score the prediction on a scale of 1 to 5:
-- 5: Perfect — equivalent information and accuracy
-- 4: Very good — captures key information with minor omissions
-- 3: Acceptable — partially correct but missing important details
-- 2: Poor — contains some relevant information but largely inaccurate
-- 1: Wrong — factually incorrect or completely unrelated
+- 5: Correct, complete, and grounded — equivalent information and accuracy
+- 4: Minor omission — captures key information with small gaps
+- 3: Partially correct — missing important details
+- 2: Mostly incorrect — contains some relevant info but largely inaccurate
+- 1: Incorrect — factually wrong or completely unrelated
 
 Evaluate each criterion individually:
 1. correctness: Are the facts in the predicted answer accurate? (1-5)

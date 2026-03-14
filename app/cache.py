@@ -2,6 +2,11 @@
 
 Cache key is the MD5 hash of the raw PDF binary. Results are stored
 as individual JSON files under results/cache/<hash>.json.
+
+Cached fields per R7:
+  document_id, extracted_text, topic, answer, pages,
+  metrics (wer, rouge_l, topic_score, answer_score, rationale, criteria),
+  cost_usd, latency_seconds
 """
 
 from __future__ import annotations
@@ -48,7 +53,12 @@ def save_to_cache(pdf_path: Path, result: dict[str, Any]) -> None:
 
     Args:
         pdf_path: Path to the PDF file.
-        result: Extraction result dict to cache.
+        result: Extraction result dict to cache. Expected fields:
+            document_id, extracted_text, topic, answer, pages,
+            wer, rouge_l, topic_score, answer_score,
+            topic_rationale, answer_rationale,
+            topic_criteria, answer_criteria,
+            cost_usd, latency_s
     """
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     h = _pdf_hash(pdf_path)
@@ -61,7 +71,7 @@ def get_cache_stats() -> dict[str, Any]:
     """Return cache statistics.
 
     Returns:
-        Dict with count, total_cost_saved, and total_docs.
+        Dict with count and cost_saved.
     """
     if not CACHE_DIR.exists():
         return {"count": 0, "cost_saved": 0.0}
@@ -77,3 +87,19 @@ def get_cache_stats() -> dict[str, Any]:
             continue
 
     return {"count": count, "cost_saved": round(cost_saved, 4)}
+
+
+def clear_cache() -> int:
+    """Clear all cached results.
+
+    Returns:
+        Number of cache entries removed.
+    """
+    if not CACHE_DIR.exists():
+        return 0
+    count = 0
+    for f in CACHE_DIR.glob("*.json"):
+        f.unlink()
+        count += 1
+    logger.info("Cleared %d cache entries", count)
+    return count
