@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import random
 import traceback
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -86,6 +87,49 @@ def _load_records(data_dir: Path, split: str, limit: int) -> list[dict]:
     return docs
 
 
+def _load_all_unique_docs(data_dir: Path, split: str) -> list[dict]:
+    """Load ALL unique docs from a split JSONL (no limit)."""
+    jsonl_path = data_dir / f"{split}.jsonl"
+    if not jsonl_path.exists():
+        return []
+
+    seen = set()
+    docs = []
+    with open(jsonl_path) as f:
+        for line in f:
+            if not line.strip():
+                continue
+            record = json.loads(line)
+            doc_id = record["document_id"]
+            if doc_id not in seen:
+                seen.add(doc_id)
+                docs.append(record)
+    return docs
+
+
+def preview_sample(sample_size: int, split: str = "repliqa_3") -> tuple[list[dict], int, int]:
+    """Generate a random sample and compute category coverage.
+
+    Args:
+        sample_size: Number of documents to sample.
+        split: Dataset split.
+
+    Returns:
+        Tuple of (sampled_records, unique_categories, total_available).
+    """
+    settings = get_settings()
+    all_docs = _load_all_unique_docs(settings.dataset_dir, split)
+    total_available = len(all_docs)
+
+    if sample_size >= total_available:
+        sample = all_docs
+    else:
+        sample = random.sample(all_docs, sample_size)
+
+    unique_cats = len({r.get("document_topic", "") for r in sample})
+    return sample, unique_cats, total_available
+
+
 def _estimate_cost(prompt_tokens: int, completion_tokens: int, pages: int = 1) -> float:
     return (
         (prompt_tokens / 1_000_000) * PRICING["input"]
@@ -97,12 +141,16 @@ def _estimate_cost(prompt_tokens: int, completion_tokens: int, pages: int = 1) -
 def run_evaluation(
     limit: int = 50,
     split: str = "repliqa_3",
+    doc_ids: list[str] | None = None,
+    use_cache: bool = True,
 ) -> Generator[tuple[EvalResult, int, int], None, None]:
     """Run evaluation on repliqa_3 holdout set.
 
     Args:
         limit: Max number of unique documents to evaluate.
         split: Dataset split to evaluate.
+        doc_ids: Optional pre-selected document IDs (from sample slider).
+        use_cache: Whether to use cached results. If False, re-runs API calls.
 
     Yields:
         Tuple of (EvalResult, current_index, total_docs).
@@ -110,7 +158,12 @@ def run_evaluation(
     settings = get_settings()
     data_dir = settings.dataset_dir
 
-    records = _load_records(data_dir, split, limit)
+    if doc_ids is not None:
+        all_docs = _load_all_unique_docs(data_dir, split)
+        id_set = set(doc_ids)
+        records = [r for r in all_docs if r["document_id"] in id_set]
+    else:
+        records = _load_records(data_dir, split, limit)
     total = len(records)
     logger.info("Evaluation: %d documents from %s", total, split)
 
@@ -137,7 +190,7 @@ def run_evaluation(
                 continue
 
             # Check cache
-            cached = load_from_cache(pdf_path)
+            cached = load_from_cache(pdf_path) if use_cache else None
             if cached:
                 result.cached = True
                 result.extracted_text = cached.get("extracted_text", "")
@@ -155,8 +208,7 @@ def run_evaluation(
                 result.topic_criteria = cached.get("topic_criteria", {})
                 result.answer_criteria = cached.get("answer_criteria", {})
                 result.topic_match = (
-                    result.topic_extracted.strip().lower()
-                    == result.topic_gt.strip().lower()
+                    compute_topic_accuracy(result.topic_extracted, result.topic_gt) == 1.0
                 )
                 result.status = "ok"
                 yield result, idx + 1, total

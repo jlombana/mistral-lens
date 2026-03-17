@@ -40,25 +40,56 @@ Document:
 TOPIC_PROMPT_V3 = """Classify the following document into exactly one of these categories:
 {categories}
 
-Important distinctions:
-- "News Stories": Broad news reporting on major events (natural disasters, climate crises, heatwaves, hurricanes) — typically national/international scope with a journalistic tone.
-- "Local News": Local community reporting about city council decisions, infrastructure projects, community festivals, or neighborhood events — focuses on a specific city or locality.
-- "Local Politics and Governance": Specifically about political campaigns, elections, municipal governance processes, or policy-making.
-- "Local Environmental Issues": Specifically about community conservation initiatives, green spaces, or local environmental stewardship.
+Category definitions:
+- "Incident Report": Assessments, analyses, or reports about the IMPACT of natural disasters (hurricanes, earthquakes, floods) on infrastructure such as power grids, transportation, or utilities. Focuses on damage assessment, vulnerability analysis, or resilience planning.
+- "News Stories": Journalistic news coverage — election campaigns, disaster preparedness drills, seismic readiness, tsunami warnings, or current event reporting with a news angle.
+- "Local News": City council decisions, local infrastructure upgrades, community festivals, cultural celebrations — reports about specific city/municipal activities and projects.
+- "Local Politics and Governance": Volunteer governance initiatives, local development through civic participation, infrastructure policy debates, municipal roadway/planning discussions — anything about how communities are governed or developed through civic action.
+- "Local Environmental Issues": Conservation initiatives, urban green spaces, environmental stewardship, community sustainability programs.
+- "Local Education Systems": Schools, universities, educational programs, digital learning initiatives, student programs.
+- "Local Health and Wellness": Nutritional education, mental health programs, community health initiatives.
+- "Local Arts and Culture": Street art, graffiti, cultural art scenes, artistic expression in communities.
+- "Local Sports and Activities": Community sports leagues, intramural competitions, esports, recreational activities.
+- "Local Technology and Innovation": Local tech startups, community inventors, innovation hubs, crypto/fintech at local level.
+- "Neighborhood Stories": Personal or family narratives, community bonds, family traditions (past or future), tales of kinship, day-in-the-life accounts rooted in a neighborhood or family setting.
+- "Regional Folklore and Myths": Supernatural legends, mythological tales, ancient mysteries, haunted locations, dreamtime stories — traditional narratives tied to specific regions.
+- "Regional Cuisine and Recipes": History of dishes, traditional recipes, culinary traditions, food culture tracing origins over time.
+- "Company Policies": Corporate policy announcements, internal company rules, business operational guidelines.
+- "Small and Medium Enterprises": Entrepreneurial journeys, small business stories, startup founding narratives.
 
-When a document covers a major news event (e.g., a hurricane, wildfire, heatwave) even if it mentions a specific city, classify it as "News Stories", not as a more specific category.
-When a document reports on city council decisions or local infrastructure, classify it as "Local News", not "Local Politics and Governance".
+Key rules:
+- Documents about natural disaster IMPACT on infrastructure (power grids, utilities) → "Incident Report"
+- Documents about disaster PREPAREDNESS or drills → "News Stories"
+- Documents about election campaigns → "News Stories"
+- Volunteer initiatives for local development/governance → "Local Politics and Governance"
+- Infrastructure policy/roadway debates → "Local Politics and Governance"
+- City council votes on projects → "Local News"
+- Family traditions/kinship stories → "Neighborhood Stories"
+- Supernatural legends/ancient myths → "Regional Folklore and Myths"
+- History of dishes/culinary traditions → "Regional Cuisine and Recipes"
 
 Here are some examples:
 
-Document: "On the Campaign Trail: Strategic Moves in Bhopal's Municipal Election. As municipal elections approach in Bhopal, candidates have begun formulating sophisticated strategies..."
+Document: "Impact of Natural Disasters on Power Grids: A Global Assessment. In recent years, the frequency and severity of natural disasters have highlighted the vulnerability of power grids..."
+Category: Incident Report
+
+Document: "Jakarta Election Campaigns Heat Up: Here's How to Understand the System. As election day in Jakarta draws nearer, candidates are out in force..."
+Category: News Stories
+
+Document: "City Council Approves Infrastructure Upgrade Plan. On September 8, 2023, the City Council unanimously voted to approve a comprehensive infrastructure upgrade..."
+Category: Local News
+
+Document: "Supporting Local Development Through Volunteer Initiatives. They say the grass grows greener where it's watered, and when it comes to local governance..."
 Category: Local Politics and Governance
 
-Document: "Ottawa City Council Affirms Investment In Infrastructure Upgrade. Ottawa City Council held an intense marathon session to devise an extensive plan for infrastructure enhancement across Ottawa..."
-Category: Local Economy and Market
+Document: "Future Prospect: Seoul Family Traditions 2073. As Seoul comes alive with colorful maple leaves, family gatherings start taking place..."
+Category: Neighborhood Stories
 
-Document: "Community Conservation Initiatives: Local Initiatives to Revitalize Urban Environments. At a time of growing environmental concerns and diminishing green spaces, grassroots conservation initiatives..."
-Category: Local Environmental Issues
+Document: "Whispers of the Dreamtime. In Australia's wide-open landscapes, stories abound that speak of supernatural beings..."
+Category: Regional Folklore and Myths
+
+Document: "Tracing Sapporo's Miso Ramen: A Journey Throughout Time. As steam emanates from a bowl of miso ramen..."
+Category: Regional Cuisine and Recipes
 
 Now classify this document. Return only the exact category name, nothing else.
 

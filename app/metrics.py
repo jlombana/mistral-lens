@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any
 
 from pydantic import BaseModel
@@ -56,6 +57,43 @@ class MetricsReport(BaseModel):
     total_cost_usd: float = 0.0
     text_metrics: list[TextMetrics]
     judge_scores: list[JudgeScore]
+
+
+def compute_extraction_density(text: str, num_pages: int) -> int:
+    """Compute words extracted per page — proxy for OCR completeness.
+
+    Args:
+        text: Extracted OCR text.
+        num_pages: Number of pages in the document.
+
+    Returns:
+        Words per page (integer).
+    """
+    if not text or num_pages <= 0:
+        return 0
+    word_count = len(text.split())
+    return word_count // num_pages
+
+
+def compute_ttr(text: str) -> float:
+    """Compute Type-Token Ratio (TTR) on text.
+
+    Measures vocabulary diversity — very low TTR signals repetitive
+    or garbled OCR output (e.g. repeated artifacts, header loops).
+
+    Args:
+        text: Input text.
+
+    Returns:
+        TTR value between 0.0 and 1.0.
+    """
+    if not text:
+        return 0.0
+    # Case-insensitive, strip punctuation
+    words = re.findall(r"[a-zA-Z0-9]+", text.lower())
+    if not words:
+        return 0.0
+    return len(set(words)) / len(words)
 
 
 def compute_topic_accuracy(predicted: str, reference: str) -> float:

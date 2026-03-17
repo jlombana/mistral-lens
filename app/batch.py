@@ -170,7 +170,7 @@ def run_batch(
                 result.num_pages = cached.get("num_pages", 1)
                 result.topic_criteria = cached.get("topic_criteria", {})
                 result.answer_criteria = cached.get("answer_criteria", {})
-                result.topic_match = result.topic_extracted.strip().lower() == result.topic_gt.strip().lower()
+                result.topic_match = compute_topic_accuracy(result.topic_extracted, result.topic_gt) == 1.0
                 result.status = "ok"
                 yield result, idx + 1, total
                 continue
